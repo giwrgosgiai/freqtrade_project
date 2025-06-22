@@ -1,0 +1,118 @@
+version: '3.9'
+
+networks:
+  ftnet:
+    driver: bridge
+
+x-freqtrade: &defaults
+  image: freqtradeorg/freqtrade:stable
+  restart: unless-stopped
+  environment:
+    - API_SERVER_ENABLED=false
+    - PYTHONUNBUFFERED=1
+  networks:
+    - ftnet
+  volumes:
+    - ./user_data_${SERVICE_NAME}:/freqtrade/user_data_${SERVICE_NAME}
+    - ./user_data:/freqtrade/user_data
+    - ./shared:/freqtrade/shared
+    - ./prepare_config.sh:/freqtrade/prepare_config.sh
+  entrypoint: ["/freqtrade/prepare_config.sh"]
+
+services:
+  freqai:
+    <<: *defaults
+    container_name: ft_freqai
+    environment:
+      - SERVICE_NAME=freqai
+    command: >
+      trade 
+      --config user_data/config.json 
+      --strategy FreqaiExampleStrategy 
+      --strategy-path user_data/strategies
+      --freqaimodel LightGBMRegressor
+
+  swing:
+    <<: *defaults
+    container_name: ft_swing
+    environment:
+      - SERVICE_NAME=swing
+    command: >
+      trade 
+      --config user_data/config.json 
+      --strategy VolatilitySystem
+
+  nfi:
+    <<: *defaults
+    container_name: ft_nfi
+    environment:
+      - SERVICE_NAME=nfi
+    command: >
+      trade 
+      --config user_data/config.json 
+      --strategy NostalgiaForInfinityX6
+
+  scalp:
+    image: freqtradeorg/freqtrade:stable
+    volumes:
+      - ./user_data_scalp:/freqtrade/user_data
+    command: trade --config user_data/config.json --strategy BBRSI
+    container_name: ft_scalp
+    restart: unless-stopped
+
+  # Backtesting services
+  nfi_backtest:
+    <<: *defaults
+    container_name: ft_nfi_backtest
+    environment:
+      - SERVICE_NAME=nfi
+    command: >
+      backtesting 
+      --config user_data/config.json 
+      --strategy-list ClucHAnix NostalgiaForInfinityX6 
+      --timerange 20220101-
+
+  nfi_hyperopt:
+    <<: *defaults
+    container_name: ft_nfi_hyperopt
+    environment:
+      - SERVICE_NAME=nfi
+    command: >
+      hyperopt 
+      --config user_data/config.json 
+      --strategy NostalgiaForInfinityX6 
+      --spaces roi stoploss 
+      --epochs 100
+
+  scalp_test_strategy:
+    <<: *defaults
+    container_name: ft_scalp_test
+    environment:
+      - SERVICE_NAME=scalp
+    command: >
+      test-strategy 
+      --config user_data/config.json 
+      --strategy BbandRsi
+
+  # Multi-strategy service
+  multi_strategy:
+    <<: *defaults
+    container_name: ft_multi
+    environment:
+      - SERVICE_NAME=multi
+    command: >
+      trade 
+      --config user_data/config.json 
+      --strategy-list ClucHAnix HiddenBladeV9 
+
+  freqai_trainer:
+    image: freqtradeorg/freqtrade:stable
+    volumes:
+      - ./user_data_freqai:/freqtrade/user_data
+    command: >
+      trade --config user_data/config.json
+            --strategy FreqaiExampleStrategy
+            --freqaimodel LightGBMRegressor
+            --dry-run
+    container_name: ft_freqai
+    restart: unless-stopped 
